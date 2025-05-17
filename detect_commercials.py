@@ -7,6 +7,7 @@ from pyannote.audio import Pipeline
 import sys
 import os
 from dotenv import load_dotenv
+import tiktoken
 
 load_dotenv()
 
@@ -73,7 +74,7 @@ def assign_speakers_to_segments(segments, speaker_map):
 
 # --- Chunking ---
 
-def chunk_segments(segments, max_duration=150, overlap=30):
+def chunk_segments(segments, max_duration=250, overlap=50):
     chunks = []
     start_idx = 0
     while start_idx < len(segments):
@@ -128,6 +129,7 @@ You are analyzing a transcript from a video that contains:
 - Show content, cartoons, or dead air
 
 Each line includes a timestamp and speaker label.
+Speaker changes may indicate a shift from one ad to another.
 
 Your task: segment the transcript into clearly labeled parts, and only output segments that are:
 - "Commercial"
@@ -142,6 +144,11 @@ Bump [00:01:05 - 00:01:15]
 Transcript:
 {textwrap.indent(transcript_text, '  ')}
 """
+    
+    enc = tiktoken.encoding_for_model("gpt-3.5-turbo")
+    tokens = len(enc.encode(prompt))
+    print(f"The prompt is {tokens} tokens.")
+
     return prompt
 
 def extract_labeled_segments(response):
