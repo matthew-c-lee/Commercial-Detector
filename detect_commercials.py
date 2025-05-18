@@ -14,6 +14,8 @@ from openai import OpenAI
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
+import sqlite3
 
 load_dotenv()
 
@@ -117,7 +119,7 @@ def adjust_segments_to_black_frames(labeled_segments: list[LabeledSegment], blac
 
 # --- Audio + Transcription + Diarization ---
 
-def extract_audio(video_path: Path, wav_path: Path):
+def extract_audio(video_path: Path, wav_path: Path) -> Path:
     print("Extracting audio...")
     cmd = [
         "ffmpeg", "-y", "-i", str(video_path),
@@ -126,10 +128,10 @@ def extract_audio(video_path: Path, wav_path: Path):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return wav_path
 
-def transcribe_with_whisper(audio_path, model_size="base") -> list[Segment]:
+def transcribe_with_whisper(audio_path: Path, model_size: str="base") -> list[Segment]:
     print("Transcribing with Whisper...")
     model = whisper.load_model(model_size)
-    result = model.transcribe(audio_path)
+    result = model.transcribe(str(audio_path))
 
     assert isinstance(result["segments"], list)
     segments: list[dict] = result["segments"]
@@ -291,6 +293,67 @@ def extract_labeled_segments(response) -> list[LabeledSegment]:
         )
     return results
 
+def hash_file(filepath: Path) -> str:
+    hasher = hashlib.sha256()
+    with filepath.open("rb") as f:
+        while chunk := f.read(8192):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+def init_db(db_path="cache.db"):
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS videos (
+            hash TEXT PRIMARY KEY,
+            path TEXT,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS transcripts (
+            video_hash TEXT,
+            start REAL,
+            text TEXT,
+            speaker TEXT,
+            FOREIGN KEY(video_hash) REFERENCES videos(hash)
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS speaker_spans (
+            video_hash TEXT,
+            start REAL,
+            end REAL,
+            speaker TEXT,
+            FOREIGN KEY(video_hash) REFERENCES videos(hash)
+        )
+    """)
+    conn.commit()
+    return conn
+
+def is_video_cached(conn, video_hash: str) -> bool:
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM videos WHERE hash = ?", (video_hash,))
+    return cur.fetchone() is not None
+
+def store_video_data(conn, video_hash: str, video_path: Path,
+                     segments: list[Segment], spans: list[SpeakerSpan]):
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO videos (hash, path) VALUES (?, ?)", (video_hash, str(video_path)))
+
+    for seg in segments:
+        cur.execute("INSERT INTO transcripts (video_hash, start, text, speaker) VALUES (?, ?, ?, ?)",
+                    (video_hash, seg.start, seg.text, seg.speaker))
+
+    for span in spans:
+        cur.execute("INSERT INTO speaker_spans (video_hash, start, end, speaker) VALUES (?, ?, ?, ?)",
+                    (video_hash, span.start, span.end, span.speaker))
+
+    conn.commit()
+
+
+
 # --- Main ---
 
 if __name__ == "__main__":
@@ -299,8 +362,17 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
     args = parser.parse_args()
 
-    video_file = Path(args.video_file)
+    video_path = Path(args.video_file)
     output_dir = Path(args.output_dir)
+
+    db = init_db()
+
+    video_hash = hash_file(filepath=video_path)
+
+    if is_video_cached(conn=db, video_hash=video_hash):
+        print("Video already processed. Skipping...")
+        sys.exit(0)
+    
 
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
@@ -310,12 +382,14 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "prediction.txt")
 
-    audio_path: Path = extract_audio(video_path=video_file, wav_path=Path("runtime/audio.wav"))
+    audio_path: Path = extract_audio(video_path=video_path, wav_path=Path("runtime/audio.wav"))
     speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
     segments: list[Segment] = transcribe_with_whisper(audio_path)
     annotated_segments: list[Segment] = assign_speakers_to_segments(segments, speaker_spans)
 
-    black_frame_starts: list[float] = detect_black_frames(video_file, threshold=10, min_duration=0.3)
+    store_video_data(conn=db, video_hash=video_hash, video_path=video_path, segments=annotated_segments, spans=speaker_spans)
+
+    black_frame_starts: list[float] = detect_black_frames(video_path, threshold=10, min_duration=0.3)
     for black_frame_time in black_frame_starts:
         annotated_segments.append(
             Segment(
@@ -354,7 +428,7 @@ Bump [00:05:54 - 00:05:57]
 
     deduped.sort(key=lambda labeled_segment: parse_timestamp_to_seconds(labeled_segment.start))
 
-    sensitive_markers: list[float] = detect_black_frames(video_file, threshold=20, min_duration=0.03)
+    sensitive_markers: list[float] = detect_black_frames(video_path, threshold=20, min_duration=0.03)
     adjusted_segments: list[LabeledSegment] = adjust_segments_to_black_frames(deduped, sensitive_markers)
 
     print("\n=== Final Labeled Segments ===")
@@ -376,7 +450,7 @@ Bump [00:05:54 - 00:05:57]
         counters[base_name] = count + 1
 
         cmd = [
-            "ffmpeg", "-y", "-i", video_file,
+            "ffmpeg", "-y", "-i", video_path,
             "-ss", segment.start, "-to", segment.end,
             "-c:v", "libx264", "-c:a", "aac",
             filename

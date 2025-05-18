@@ -3,3 +3,4 @@ env
 training
 runtime
 output
+cache.db
