@@ -74,7 +74,7 @@ def detect_black_frames(video_path: Path, threshold: int=10, min_duration: float
         if not ret:
             break
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray: np.ndarray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         avg_brightness = np.mean(gray)
         current_time = frame_idx / fps
 
