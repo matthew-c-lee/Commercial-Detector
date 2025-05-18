@@ -11,6 +11,7 @@ import numpy as np
 from dotenv import load_dotenv
 import tiktoken
 from openai import OpenAI
+import sys
 
 load_dotenv()
 
@@ -253,7 +254,7 @@ if __name__ == "__main__":
 
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
-        print("HUGGINGFACE_TOKEN not found in .env")
+        print("HUGGINGFACE_TOKEN needs to be an environment variable.")
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
