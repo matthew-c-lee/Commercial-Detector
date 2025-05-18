@@ -35,7 +35,7 @@ class SpeakerSpan:
 class BlackFrame:
     start: float
 
-@dataclass
+@dataclass(frozen=True)
 class LabeledSegment:
     label: str
     start: str
@@ -259,6 +259,15 @@ BUMPS ARE AT LEAST 5 SECONDS LONG
 
 All other content should be ignored.
 
+For each **Commercial**, infer what product, brand, or service is being advertised.
+Use that as the label. If it’s unclear, use a short descriptive label.
+Use **lowercase letters** and **underscores instead of spaces**.
+
+For example:
+- A cereal ad → `honey_nut_cheerios`
+- A DVD ad → `shrek_2_dvd`
+- A generic promo → `nickelodeon_promo`
+
 Use speaker changes and **shifts in tone or intent**, as well as visual fade-to-black cues, to find transitions.
 
 If there are two different commercials one after the other, list them separately!
@@ -293,9 +302,9 @@ def extract_labeled_segments(response) -> list[LabeledSegment]:
         )
     return results
 
-def hash_file(filepath: Path) -> str:
+def hash_file(file_path: Path) -> str:
     hasher = hashlib.sha256()
-    with filepath.open("rb") as f:
+    with file_path.open("rb") as f:
         while chunk := f.read(8192):
             hasher.update(chunk)
     return hasher.hexdigest()
@@ -352,42 +361,50 @@ def store_video_data(conn, video_hash: str, video_path: Path,
 
     conn.commit()
 
+def load_video_data(conn: sqlite3.Connection, video_hash: str) -> tuple[list[Segment], list[SpeakerSpan]]:
+    cur = conn.cursor()
+
+    # Load segments from transcript table
+    cur.execute("SELECT start, text, speaker FROM transcripts WHERE video_hash = ?", (video_hash,))
+    segments = [
+        Segment(start=row[0], text=row[1], speaker=row[2])
+        for row in cur.fetchall()
+    ]
+
+    # Load speaker spans
+    cur.execute("SELECT start, end, speaker FROM speaker_spans WHERE video_hash = ?", (video_hash,))
+    spans = [
+        SpeakerSpan(start=row[0], end=row[1], speaker=row[2])
+        for row in cur.fetchall()
+    ]
+
+    return segments, spans
 
 
-# --- Main ---
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("video_file", help="Path to video file")
-    parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
-    args = parser.parse_args()
-
-    video_path = Path(args.video_file)
-    output_dir = Path(args.output_dir)
-
-    db = init_db()
-
-    video_hash = hash_file(filepath=video_path)
-
-    if is_video_cached(conn=db, video_hash=video_hash):
-        print("Video already processed. Skipping...")
-        sys.exit(0)
+def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: Path, should_reprocess: bool):
+    video_hash = hash_file(file_path=video_path)
     
-
-    hf_token = os.getenv("HUGGINGFACE_TOKEN")
-    if not hf_token:
-        print("HUGGINGFACE_TOKEN needs to be an environment variable.")
-        sys.exit(1)
-
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "prediction.txt")
 
-    audio_path: Path = extract_audio(video_path=video_path, wav_path=Path("runtime/audio.wav"))
-    speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
-    segments: list[Segment] = transcribe_with_whisper(audio_path)
-    annotated_segments: list[Segment] = assign_speakers_to_segments(segments, speaker_spans)
+    if is_video_cached(conn=conn, video_hash=video_hash):
+        if not should_reprocess:
+            print("Video already processed. Skipping...")
+            sys.exit(0)
+        else:
+            print("Reprocessing using cached transcription and diarization data...")
+            annotated_segments, speaker_spans = load_video_data(conn=conn, video_hash=video_hash)
+    else:
+        print("Processing new video...")
+        hf_token = os.getenv("HUGGINGFACE_TOKEN")
+        if not hf_token:
+            print("HUGGINGFACE_TOKEN needs to be an environment variable.")
+            sys.exit(1)
 
-    store_video_data(conn=db, video_hash=video_hash, video_path=video_path, segments=annotated_segments, spans=speaker_spans)
+        audio_path: Path = extract_audio(video_path=video_path, wav_path=Path("runtime/audio.wav"))
+        speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
+        annotated_segments: list[Segment] = transcribe_with_whisper(audio_path)
+        store_video_data(conn=conn, video_hash=video_hash, video_path=video_path, segments=annotated_segments, spans=speaker_spans)
 
     black_frame_starts: list[float] = detect_black_frames(video_path, threshold=10, min_duration=0.3)
     for black_frame_time in black_frame_starts:
@@ -457,3 +474,26 @@ Bump [00:05:54 - 00:05:57]
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"Saved: {filename}")
+
+# --- Main ---
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_file", help="Path to video file")
+    parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
+    parser.add_argument("--reprocess", action="store_true", help="Reprocess even if video is cached")
+    args = parser.parse_args()
+
+    video_path: Path = Path(args.video_file)
+    output_dir: Path = Path(args.output_dir)
+    should_reprocess: bool = args.reprocess
+
+    db = init_db()
+
+    detect_commercials(
+        conn=db,
+        video_path=video_path,
+        output_dir=output_dir,
+        should_reprocess=should_reprocess,
+    )
+
+    
