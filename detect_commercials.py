@@ -4,7 +4,7 @@ import re
 import textwrap
 from datetime import timedelta
 from pyannote.audio import Pipeline
-import sys
+import argparse
 import os
 import cv2
 import numpy as np
@@ -182,7 +182,7 @@ def call_openai(prompt, model='gpt-4o'):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.0  # deterministic output
+        temperature=0.0
     )
     answer = response.choices[0].message.content
     assert answer is not None
@@ -243,17 +243,21 @@ def extract_labeled_segments(response):
 # --- Main ---
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python detect_commercials_with_speakers.py <video_file>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("video_file", help="Path to video file")
+    parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
+    args = parser.parse_args()
 
-    video_file = sys.argv[1]
+    video_file = args.video_file
+    output_dir = args.output_dir
+
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
         print("HUGGINGFACE_TOKEN not found in .env")
         sys.exit(1)
 
-    output_file = "training/prediction.txt"
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, "prediction.txt")
 
     audio_path = extract_audio(video_file)
     speaker_map = run_diarization(audio_path, hf_token)
@@ -274,7 +278,6 @@ if __name__ == "__main__":
     all_segments = []
     for chunk in chunks:
         prompt = build_prompt(chunk)
-        # response = call_openai(prompt)
         response = """
 Commercial [00:00:06 - 00:01:03]
 Commercial [00:01:07 - 00:01:35]
@@ -300,7 +303,6 @@ Bump [00:05:54 - 00:05:57]
     deduped.sort(key=lambda x: parse_timestamp_to_seconds(x[1]))
 
     sensitive_markers = detect_black_frames(video_file, threshold=20, min_duration=0.03)
-
     adjusted = adjust_segments_to_black_frames(deduped, sensitive_markers)
 
     print("\n=== Final Labeled Segments ===")
@@ -311,3 +313,21 @@ Bump [00:05:54 - 00:05:57]
             f.write(line + "\n")
 
     print(f"\nResults saved to: {output_file}")
+
+    print("\nExporting individual video segments...")
+    counters = {}
+
+    for label, start, end in adjusted:
+        base_name = label.lower()
+        count = counters.get(base_name, 0)
+        filename = os.path.join(output_dir, f"{base_name}{'' if count == 0 else f'_{count}'}.mp4")
+        counters[base_name] = count + 1
+
+        cmd = [
+            "ffmpeg", "-y", "-i", video_file,
+            "-ss", start, "-to", end,
+            "-c:v", "libx264", "-c:a", "aac",
+            filename
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"Saved: {filename}")
