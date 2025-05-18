@@ -13,3 +13,4 @@ torchvision
 torchaudio
 python-dotenv
 tiktoken
+openai
