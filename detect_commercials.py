@@ -12,8 +12,32 @@ from dotenv import load_dotenv
 import tiktoken
 from openai import OpenAI
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 
 load_dotenv()
+
+@dataclass
+class Segment:
+    start: float
+    text: str
+    speaker: str
+
+@dataclass
+class SpeakerSpan:
+    start: float
+    end: float
+    speaker: str
+
+@dataclass
+class BlackFrame:
+    start: float
+
+@dataclass
+class LabeledSegment:
+    label: str
+    start: str
+    end: str
 
 # --- Utility functions ---
 
@@ -35,8 +59,8 @@ def parse_timestamp_to_seconds(ts):
 
 # --- Visual Analysis: Black Frame Detection ---
 
-def detect_black_frames(video_path, threshold=10, min_duration=0.3):
-    cap = cv2.VideoCapture(video_path)
+def detect_black_frames(video_path: Path, threshold: int=10, min_duration: float=0.3) -> list[float]:
+    cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise ValueError(f"Could not open video: {video_path}")
 
@@ -61,7 +85,7 @@ def detect_black_frames(video_path, threshold=10, min_duration=0.3):
             if black_start is not None:
                 duration = current_time - black_start
                 if duration >= min_duration:
-                    markers.append({"start": black_start})
+                    markers.append(black_start)
                 black_start = None
 
         frame_idx += 1
@@ -69,81 +93,101 @@ def detect_black_frames(video_path, threshold=10, min_duration=0.3):
     cap.release()
     return markers
 
-def adjust_segments_to_black_frames(segments, black_frames):
+def adjust_segments_to_black_frames(labeled_segments: list[LabeledSegment], black_frame_times) -> list[LabeledSegment]:
     adjusted = []
-    black_seconds = sorted(bf["start"] for bf in black_frames)
+    black_seconds = sorted(bf for bf in black_frame_times)
 
     def find_closest(time):
         return min(black_seconds, key=lambda x: abs(x - time)) if black_seconds else time
 
-    for label, start, end in segments:
-        start_sec = parse_timestamp_to_seconds(start)
-        end_sec = parse_timestamp_to_seconds(end)
+    for segment in labeled_segments:
+        start_sec = parse_timestamp_to_seconds(segment.start)
+        end_sec = parse_timestamp_to_seconds(segment.end)
         new_start = find_closest(start_sec)
         new_end = find_closest(end_sec)
         if new_end > new_start:
-            adjusted.append((label, format_timestamp(new_start), format_timestamp(new_end)))
+            adjusted.append(
+                LabeledSegment(
+                    label=segment.label, 
+                    start=format_timestamp(new_start), 
+                    end=format_timestamp(new_end))
+                )
 
     return adjusted
 
 # --- Audio + Transcription + Diarization ---
 
-def extract_audio(video_path, wav_path="runtime/audio.wav"):
+def extract_audio(video_path: Path, wav_path: Path):
     print("Extracting audio...")
     cmd = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-ac", "1", "-ar", "16000", wav_path
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-ac", "1", "-ar", "16000", str(wav_path)
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return wav_path
 
-def transcribe_with_whisper(audio_path, model_size="base"):
+def transcribe_with_whisper(audio_path, model_size="base") -> list[Segment]:
     print("Transcribing with Whisper...")
     model = whisper.load_model(model_size)
     result = model.transcribe(audio_path)
-    return result["segments"]
 
-def run_diarization(wav_path, hf_token):
+    assert isinstance(result["segments"], list)
+    segments: list[dict] = result["segments"]
+
+    return [
+        Segment(
+            start=seg["start"],
+            text=seg["text"].strip(),
+            speaker="Unknown"  # Speaker is added later via diarization
+        )
+        for seg in segments
+    ]
+
+def run_diarization(wav_path: Path, hf_token: str) -> list[SpeakerSpan]:
     print("Running speaker diarization...")
     pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization", use_auth_token=hf_token)
     diarization = pipeline(wav_path)
-    speaker_map = []
+    speaker_list = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):
-        speaker_map.append({
-            "start": turn.start,
-            "end": turn.end,
-            "speaker": speaker
-        })
-    return speaker_map
+        speaker_list.append(
+            SpeakerSpan(
+                start=turn.start,
+                end=turn.end,
+                speaker=speaker
+            )
+        )
+    return speaker_list
 
-def assign_speakers_to_segments(segments, speaker_map):
+def assign_speakers_to_segments(segments: list[Segment], speaker_spans: list[SpeakerSpan]) -> list[Segment]:
     print("Assigning speakers to segments...")
     annotated = []
-    for seg in segments:
+    for segment in segments:
         speaker = "Unknown"
-        for entry in speaker_map:
-            if entry["start"] <= seg["start"] <= entry["end"]:
-                speaker = entry["speaker"]
+        for speaker_span in speaker_spans:
+            if speaker_span.start <= segment.start <= speaker_span.end:
+                speaker = speaker_span.speaker
                 break
-        annotated.append({
-            "start": seg["start"],
-            "text": seg["text"].strip(),
-            "speaker": speaker
-        })
+        annotated.append(
+            Segment(
+                start=segment.start,
+                text=segment.text.strip(),
+                speaker=speaker
+            )
+        )
     return annotated
 
 # --- Chunking ---
 
-def chunk_segments(segments, max_duration=1000, overlap=50):
+def chunk_segments(segments: list[Segment], max_duration: float=1000, overlap: float=50) -> list[list[Segment]]:
     chunks = []
     start_idx = 0
     while start_idx < len(segments):
         chunk = []
-        start_time = segments[start_idx]['start']
+        start_time = segments[start_idx].start
         end_time = start_time + max_duration
 
         i = start_idx
-        while i < len(segments) and segments[i]['start'] <= end_time:
+        while i < len(segments) and segments[i].start <= end_time:
             chunk.append(segments[i])
             i += 1
 
@@ -153,7 +197,7 @@ def chunk_segments(segments, max_duration=1000, overlap=50):
         next_start_time = start_time + (max_duration - overlap)
         next_idx = None
         for j in range(i, len(segments)):
-            if segments[j]['start'] >= next_start_time:
+            if segments[j].start >= next_start_time:
                 next_idx = j
                 break
 
@@ -189,9 +233,9 @@ def call_openai(prompt, model='gpt-4o'):
     assert answer is not None
     return answer.strip()
 
-def build_prompt(segments):
+def build_prompt(segments: list[Segment]):
     transcript_text = "\n".join(
-        f"[{format_timestamp(seg['start'])}] (Speaker: {seg['speaker']}) {seg['text']}"
+        f"[{format_timestamp(seg.start)}] (Speaker: {seg.speaker}) {seg.text}"
         for seg in segments
     )
 
@@ -226,19 +270,25 @@ Bump [00:01:05 - 00:01:15]
 Transcript:
 {textwrap.indent(transcript_text, '  ')}
 """
-    enc = tiktoken.encoding_for_model("gpt-3.5-turbo")
+    enc = tiktoken.encoding_for_model("gpt-4o")
     tokens = len(enc.encode(prompt))
     print(f"The prompt is {tokens} tokens.")
     return prompt
 
-def extract_labeled_segments(response):
+def extract_labeled_segments(response) -> list[LabeledSegment]:
     pattern = r'(Commercial|Bump)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]'
-    results = []
+    results: list[LabeledSegment] = []
     for match in re.finditer(pattern, response, flags=re.IGNORECASE):
         label = match.group(1).capitalize()
         start = match.group(2)
         end = match.group(3)
-        results.append((label, start, end))
+        results.append(
+            LabeledSegment(
+                label=label, 
+                start=start, 
+                end=end
+            )
+        )
     return results
 
 # --- Main ---
@@ -249,8 +299,8 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
     args = parser.parse_args()
 
-    video_file = args.video_file
-    output_dir = args.output_dir
+    video_file = Path(args.video_file)
+    output_dir = Path(args.output_dir)
 
     hf_token = os.getenv("HUGGINGFACE_TOKEN")
     if not hf_token:
@@ -260,23 +310,25 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "prediction.txt")
 
-    audio_path = extract_audio(video_file)
-    speaker_map = run_diarization(audio_path, hf_token)
-    segments = transcribe_with_whisper(audio_path)
-    annotated = assign_speakers_to_segments(segments, speaker_map)
+    audio_path: Path = extract_audio(video_path=video_file, wav_path=Path("runtime/audio.wav"))
+    speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
+    segments: list[Segment] = transcribe_with_whisper(audio_path)
+    annotated_segments: list[Segment] = assign_speakers_to_segments(segments, speaker_spans)
 
-    visual_markers = detect_black_frames(video_file, threshold=10, min_duration=0.3)
-    for marker in visual_markers:
-        annotated.append({
-            "start": marker["start"],
-            "text": "(Visual: fade to black)",
-            "speaker": "Visual"
-        })
+    black_frame_starts: list[float] = detect_black_frames(video_file, threshold=10, min_duration=0.3)
+    for black_frame_time in black_frame_starts:
+        annotated_segments.append(
+            Segment(
+                start=black_frame_time,
+                text="(Visual: fade to black)",
+                speaker="Visual"
+            )
+        )
 
-    annotated.sort(key=lambda x: x['start'])
-    chunks = chunk_segments(annotated, max_duration=1000, overlap=30)
+    annotated_segments.sort(key=lambda x: x.start)
+    chunks: list[list[Segment]] = chunk_segments(annotated_segments, max_duration=1000, overlap=30)
 
-    all_segments = []
+    all_segments: list[LabeledSegment] = []
     for chunk in chunks:
         prompt = build_prompt(chunk)
         response = """
@@ -290,26 +342,25 @@ Commercial [00:05:09 - 00:05:52]
 Bump [00:05:54 - 00:05:57]
 """
         print("\nLLM Response:\n", response)
-        labels = extract_labeled_segments(response)
+        labels: list[LabeledSegment] = extract_labeled_segments(response)
         all_segments.extend(labels)
 
-    seen = set()
+    seen: set[LabeledSegment] = set()
     deduped = []
-    for label, start, end in all_segments:
-        key = (label, start, end)
-        if key not in seen:
-            seen.add(key)
-            deduped.append((label, start, end))
+    for labeled_segment in all_segments:
+        if labeled_segment not in seen:
+            seen.add(labeled_segment)
+            deduped.append(labeled_segment)
 
-    deduped.sort(key=lambda x: parse_timestamp_to_seconds(x[1]))
+    deduped.sort(key=lambda labeled_segment: parse_timestamp_to_seconds(labeled_segment.start))
 
-    sensitive_markers = detect_black_frames(video_file, threshold=20, min_duration=0.03)
-    adjusted = adjust_segments_to_black_frames(deduped, sensitive_markers)
+    sensitive_markers: list[float] = detect_black_frames(video_file, threshold=20, min_duration=0.03)
+    adjusted_segments: list[LabeledSegment] = adjust_segments_to_black_frames(deduped, sensitive_markers)
 
     print("\n=== Final Labeled Segments ===")
     with open(output_file, "w") as f:
-        for label, start, end in adjusted:
-            line = f"{label} [{start} - {end}]"
+        for segment in adjusted_segments:
+            line = f"{segment.label} [{segment.start} - {segment.end}]"
             print(line)
             f.write(line + "\n")
 
@@ -318,15 +369,15 @@ Bump [00:05:54 - 00:05:57]
     print("\nExporting individual video segments...")
     counters = {}
 
-    for label, start, end in adjusted:
-        base_name = label.lower()
+    for segment in adjusted_segments:
+        base_name = segment.label.lower()
         count = counters.get(base_name, 0)
         filename = os.path.join(output_dir, f"{base_name}{'' if count == 0 else f'_{count}'}.mp4")
         counters[base_name] = count + 1
 
         cmd = [
             "ffmpeg", "-y", "-i", video_file,
-            "-ss", start, "-to", end,
+            "-ss", segment.start, "-to", segment.end,
             "-c:v", "libx264", "-c:a", "aac",
             filename
         ]
