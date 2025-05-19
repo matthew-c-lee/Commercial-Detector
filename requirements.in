@@ -1,0 +1,13 @@
+ffmpeg
+opencv-python
+Pillow
+git+https://github.com/openai/whisper.git
+ffmpeg-python
+ollama
+pyannote-audio
+torch
+torchvision
+torchaudio
+python-dotenv
+tiktoken
+openai
