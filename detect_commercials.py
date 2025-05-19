@@ -286,7 +286,7 @@ Transcript:
     print(f"The prompt is {tokens} tokens.")
     return prompt
 
-def extract_labeled_segments(response) -> list[LabeledSegment]:
+def extract_labeled_segments(response: str) -> list[LabeledSegment]:
     pattern = r'(Commercial|Bump)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]'
     results: list[LabeledSegment] = []
     for match in re.finditer(pattern, response, flags=re.IGNORECASE):
@@ -338,6 +338,15 @@ def init_db(db_path="cache.db"):
             FOREIGN KEY(video_hash) REFERENCES videos(hash)
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS llm_responses (
+            video_hash TEXT,
+            chunk_index INTEGER,
+            prompt TEXT,
+            response TEXT,
+            PRIMARY KEY (video_hash, chunk_index)
+        )
+    """)
     conn.commit()
     return conn
 
@@ -346,7 +355,7 @@ def is_video_cached(conn, video_hash: str) -> bool:
     cur.execute("SELECT 1 FROM videos WHERE hash = ?", (video_hash,))
     return cur.fetchone() is not None
 
-def store_video_data(conn, video_hash: str, video_path: Path,
+def store_video_data(conn: sqlite3.Connection, video_hash: str, video_path: Path,
                      segments: list[Segment], spans: list[SpeakerSpan]):
     cur = conn.cursor()
     cur.execute("INSERT OR IGNORE INTO videos (hash, path) VALUES (?, ?)", (video_hash, str(video_path)))
@@ -380,14 +389,52 @@ def load_video_data(conn: sqlite3.Connection, video_hash: str) -> tuple[list[Seg
 
     return segments, spans
 
+def store_llm_response(conn: sqlite3.Connection, video_hash: str, chunk_index: int, prompt: str, response: str):
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO llm_responses (video_hash, chunk_index, prompt, response) VALUES (?, ?, ?, ?)",
+        (video_hash, chunk_index, prompt, response)
+    )
+    conn.commit()
 
-def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: Path, should_reprocess: bool):
+def load_llm_response(conn, video_hash: str, chunk_index: int) -> str | None:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT response FROM llm_responses WHERE video_hash = ? AND chunk_index = ?",
+        (video_hash, chunk_index)
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+def get_llm_response(conn, video_hash, idx, chunk, use_cache: bool) -> str:
+    prompt = build_prompt(chunk)
+    if use_cache:
+        cached = load_llm_response(conn, video_hash, idx)
+        if cached:
+            print(f"\nLoaded cached LLM response for chunk {idx}")
+            return cached
+    # response = call_openai(prompt)
+    response = """
+Commercial [00:00:06 - 00:01:03]
+Commercial [00:01:07 - 00:01:35]
+Commercial [00:01:37 - 00:02:30]
+Commercial [00:03:23 - 00:03:49]
+Commercial [00:04:10 - 00:05:07]
+Bump [00:05:08 - 00:05:09]
+Commercial [00:05:09 - 00:05:52]
+Bump [00:05:54 - 00:05:57]
+"""
+    store_llm_response(conn, video_hash, idx, prompt, response)
+    print(f"\nLLM Response (new) for chunk {idx}:\n", response)
+    return response
+
+def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: Path, should_reprocess: bool, override_cache: bool, use_cached_llm_response: bool):
     video_hash = hash_file(file_path=video_path)
     
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "prediction.txt")
 
-    if is_video_cached(conn=conn, video_hash=video_hash):
+    if is_video_cached(conn=conn, video_hash=video_hash) and not override_cache:
         if not should_reprocess:
             print("Video already processed. Skipping...")
             sys.exit(0)
@@ -420,20 +467,9 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
     chunks: list[list[Segment]] = chunk_segments(annotated_segments, max_duration=1000, overlap=30)
 
     all_segments: list[LabeledSegment] = []
-    for chunk in chunks:
-        prompt = build_prompt(chunk)
-        response = """
-Commercial [00:00:06 - 00:01:03]
-Commercial [00:01:07 - 00:01:35]
-Commercial [00:01:37 - 00:02:30]
-Commercial [00:03:23 - 00:03:49]
-Commercial [00:04:10 - 00:05:07]
-Bump [00:05:08 - 00:05:09]
-Commercial [00:05:09 - 00:05:52]
-Bump [00:05:54 - 00:05:57]
-"""
-        print("\nLLM Response:\n", response)
-        labels: list[LabeledSegment] = extract_labeled_segments(response)
+    for i, chunk in enumerate(chunks):
+        response: str = get_llm_response(conn=conn, video_hash=video_hash, idx=i, chunk=chunk, use_cache=use_cached_llm_response)
+        labels: list[LabeledSegment] = extract_labeled_segments(response=response)
         all_segments.extend(labels)
 
     seen: set[LabeledSegment] = set()
@@ -481,11 +517,15 @@ if __name__ == "__main__":
     parser.add_argument("video_file", help="Path to video file")
     parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
     parser.add_argument("--reprocess", action="store_true", help="Reprocess even if video is cached")
+    parser.add_argument("--override_cache", action="store_true", help="Do not use the cache")
+    parser.add_argument("--use_cached_llm_response", action="store_true", help="Use the cached LLM response")
     args = parser.parse_args()
 
     video_path: Path = Path(args.video_file)
     output_dir: Path = Path(args.output_dir)
     should_reprocess: bool = args.reprocess
+    override_cache: bool = args.override_cache
+    use_cached_llm_response: bool = args.use_cached_llm_response
 
     db = init_db()
 
@@ -494,6 +534,8 @@ if __name__ == "__main__":
         video_path=video_path,
         output_dir=output_dir,
         should_reprocess=should_reprocess,
+        override_cache=override_cache,
+        use_cached_llm_response=use_cached_llm_response,
     )
 
     
