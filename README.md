@@ -22,9 +22,23 @@ It uses:
     HUGGINGFACE_TOKEN=your_huggingface_token
     ```
 
+## Installation
+
+```sh
+pip install git+https://github.com/matthew-c-lee/Commercial-Detector.git
+```
+
+Then you should be able to call it with:
+
+```sh
+detect-commercials
+```
+
+Upon running it for the first time, it will ask for your OpenAI API Token and a HuggingFace token to download the models. It will store these locally in a .env file.
+
 ## Command line usage
 ```sh
-python detect_commercials.py <video_file_or_directory> [options]
+detect-commercials <video_file_or_directory> [options]
 ```
 
 | Option | Description |
