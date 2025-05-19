@@ -1,10 +1,10 @@
 This tool processes video files to automatically identify and extract commercials and bumpers.
 
 It uses:
-    Speech-to-text (Whisper)
-    Speaker diarization (pyannote)
-    Visual cues (black frame detection)
-    LLMs (OpenAI GPT or Ollama) for segmentation logic
+- Speech-to-text (Whisper)
+- Speaker diarization (pyannote)
+- Visual cues (black frame detection)
+- LLMs (OpenAI GPT or Ollama) for segmentation logic
 
 ## Requirements
 - A computer that can run moderate ML workloads (though we use ChatGPT for the LLM, we still run Whisper and PyAnnote locally)
@@ -17,13 +17,10 @@ It uses:
     - Speaker Diarization: https://huggingface.co/pyannote/speaker-diarization-3.1
     - Segmentation: https://huggingface.co/pyannote/segmentation-3.0
 - A .env file with the following environment variables:
-
-```env
-OPENAI_API_KEY=your_openai_key
-HUGGINGFACE_TOKEN=your_huggingface_token
-```
-
-
+    ```env
+    OPENAI_API_KEY=your_openai_key
+    HUGGINGFACE_TOKEN=your_huggingface_token
+    ```
 
 ## Command line usage:
 ```sh
