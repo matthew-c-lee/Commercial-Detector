@@ -51,6 +51,10 @@ detect-commercials <video_file_or_directory> [options]
 
 ## How it works
 
+Before it processes any of the video files, it will check them by hash to see if they've been processed before (info is stored in sqlite db) and by default skip it if so.
+
+It will also give a rough estimate how many input tokens will be used in our API call to OpenAI, and therefore how much money the job is expected to cost. It will prompt you asking if you wish to proceed given the cost.
+
 1. Audio Extraction: Audio is extracted from the video via ffmpeg.
 2. Transcription: The audio is transcribed using OpenAI's Whisper model.
 3. Diarization: Speaker identification is performed using PyAnnote + HuggingFace.
