@@ -21,7 +21,7 @@ load_dotenv()
 
 TOKENS_PER_MINUTE = 527
 PRICE_PER_1K_TOKENS_IN_DOLLARS = 0.005
-PROMPT = f"""
+PROMPT = """
 You are analyzing a transcript from a video that contains:
 - Commercials (paid advertisements)
 - Bumps (brief channel-branded clips or transitions)
@@ -59,11 +59,13 @@ Bump [00:01:05 - 00:01:15]
 Transcript:
 """
 
+
 @dataclass
 class Segment:
     start: float
     text: str
     speaker: str
+
 
 @dataclass
 class SpeakerSpan:
@@ -71,9 +73,11 @@ class SpeakerSpan:
     end: float
     speaker: str
 
+
 @dataclass
 class BlackFrame:
     start: float
+
 
 @dataclass(frozen=True)
 class LabeledSegment:
@@ -81,13 +85,16 @@ class LabeledSegment:
     start: str
     end: str
 
+
 # --- Utility functions ---
+
 
 def format_timestamp(seconds: float):
     td = timedelta(seconds=seconds)
     total_seconds = int(td.total_seconds())
     milliseconds = int((td.total_seconds() - total_seconds) * 1000)
     return str(td).split(".")[0] + f".{milliseconds:03}"
+
 
 def parse_timestamp_to_seconds(ts):
     parts = ts.split(":")
@@ -99,9 +106,13 @@ def parse_timestamp_to_seconds(ts):
         return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     return 0
 
+
 # --- Visual Analysis: Black Frame Detection ---
 
-def detect_black_frames(video_path: Path, threshold: int=10, min_duration: float=0.3) -> list[float]:
+
+def detect_black_frames(
+    video_path: Path, threshold: int = 10, min_duration: float = 0.3
+) -> list[float]:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise ValueError(f"Could not open video: {video_path}")
@@ -135,12 +146,17 @@ def detect_black_frames(video_path: Path, threshold: int=10, min_duration: float
     cap.release()
     return markers
 
-def adjust_segments_to_black_frames(labeled_segments: list[LabeledSegment], black_frame_times) -> list[LabeledSegment]:
+
+def adjust_segments_to_black_frames(
+    labeled_segments: list[LabeledSegment], black_frame_times
+) -> list[LabeledSegment]:
     adjusted = []
     black_seconds = sorted(bf for bf in black_frame_times)
 
     def find_closest(time):
-        return min(black_seconds, key=lambda x: abs(x - time)) if black_seconds else time
+        return (
+            min(black_seconds, key=lambda x: abs(x - time)) if black_seconds else time
+        )
 
     for segment in labeled_segments:
         start_sec = parse_timestamp_to_seconds(segment.start)
@@ -150,25 +166,38 @@ def adjust_segments_to_black_frames(labeled_segments: list[LabeledSegment], blac
         if new_end > new_start:
             adjusted.append(
                 LabeledSegment(
-                    label=segment.label, 
-                    start=format_timestamp(new_start), 
-                    end=format_timestamp(new_end))
+                    label=segment.label,
+                    start=format_timestamp(new_start),
+                    end=format_timestamp(new_end),
                 )
+            )
 
     return adjusted
 
+
 # --- Audio + Transcription + Diarization ---
+
 
 def extract_audio(video_path: Path, wav_path: Path) -> Path:
     print("Extracting audio...")
     cmd = [
-        "ffmpeg", "-y", "-i", str(video_path),
-        "-ac", "1", "-ar", "16000", str(wav_path)
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        str(wav_path),
     ]
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return wav_path
 
-def transcribe_with_whisper(audio_path: Path, model_size: str="base") -> list[Segment]:
+
+def transcribe_with_whisper(
+    audio_path: Path, model_size: str = "base"
+) -> list[Segment]:
     print("Transcribing with Whisper...")
     model = whisper.load_model(model_size)
     result = model.transcribe(str(audio_path))
@@ -180,27 +209,29 @@ def transcribe_with_whisper(audio_path: Path, model_size: str="base") -> list[Se
         Segment(
             start=seg["start"],
             text=seg["text"].strip(),
-            speaker="Unknown"  # Speaker is added later via diarization
+            speaker="Unknown",  # Speaker is added later via diarization
         )
         for seg in segments
     ]
 
+
 def run_diarization(wav_path: Path, hf_token: str) -> list[SpeakerSpan]:
     print("Running speaker diarization...")
-    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization", use_auth_token=hf_token)
+    pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization", use_auth_token=hf_token
+    )
     diarization = pipeline(wav_path)
     speaker_list = []
     for turn, _, speaker in diarization.itertracks(yield_label=True):
         speaker_list.append(
-            SpeakerSpan(
-                start=turn.start,
-                end=turn.end,
-                speaker=speaker
-            )
+            SpeakerSpan(start=turn.start, end=turn.end, speaker=speaker)
         )
     return speaker_list
 
-def assign_speakers_to_segments(segments: list[Segment], speaker_spans: list[SpeakerSpan]) -> list[Segment]:
+
+def assign_speakers_to_segments(
+    segments: list[Segment], speaker_spans: list[SpeakerSpan]
+) -> list[Segment]:
     print("Assigning speakers to segments...")
     annotated = []
     for segment in segments:
@@ -210,17 +241,17 @@ def assign_speakers_to_segments(segments: list[Segment], speaker_spans: list[Spe
                 speaker = speaker_span.speaker
                 break
         annotated.append(
-            Segment(
-                start=segment.start,
-                text=segment.text.strip(),
-                speaker=speaker
-            )
+            Segment(start=segment.start, text=segment.text.strip(), speaker=speaker)
         )
     return annotated
 
+
 # --- Chunking ---
 
-def chunk_segments(segments: list[Segment], max_duration: float=1000, overlap: float=50) -> list[list[Segment]]:
+
+def chunk_segments(
+    segments: list[Segment], max_duration: float = 1000, overlap: float = 50
+) -> list[list[Segment]]:
     chunks = []
     start_idx = 0
     while start_idx < len(segments):
@@ -248,32 +279,33 @@ def chunk_segments(segments: list[Segment], max_duration: float=1000, overlap: f
         start_idx = next_idx
     return chunks
 
+
 # --- LLM Interaction ---
 
-def call_ollama(prompt, model='mistral-deterministic'):
+
+def call_ollama(prompt, model="mistral-deterministic"):
     print("Calling local LLM...")
     result = subprocess.run(
-        ['ollama', 'run', model],
-        input=prompt,
-        text=True,
-        capture_output=True
+        ["ollama", "run", model], input=prompt, text=True, capture_output=True
     )
     return result.stdout.strip()
 
-def call_openai(prompt, model='gpt-4o'):
+
+def call_openai(prompt, model="gpt-4o"):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     print("Calling OpenAI API...")
     response = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
-        temperature=0.0
+        temperature=0.0,
     )
     answer = response.choices[0].message.content
     assert answer is not None
     return answer.strip()
+
 
 def build_prompt(segments: list[Segment]):
     transcript_text = "\n".join(
@@ -289,21 +321,17 @@ def build_prompt(segments: list[Segment]):
     print(f"The prompt is {tokens} tokens.")
     return prompt
 
+
 def extract_labeled_segments(response: str) -> list[LabeledSegment]:
-    pattern = r'([a-zA-Z0-9_]+)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]'
+    pattern = r"([a-zA-Z0-9_]+)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]"
     results: list[LabeledSegment] = []
     for match in re.finditer(pattern, response, flags=re.IGNORECASE):
         label = match.group(1).capitalize()
         start = match.group(2)
         end = match.group(3)
-        results.append(
-            LabeledSegment(
-                label=label, 
-                start=start, 
-                end=end
-            )
-        )
+        results.append(LabeledSegment(label=label, start=start, end=end))
     return results
+
 
 def hash_file(file_path: Path) -> str:
     hasher = hashlib.sha256()
@@ -311,6 +339,7 @@ def hash_file(file_path: Path) -> str:
         while chunk := f.read(8192):
             hasher.update(chunk)
     return hasher.hexdigest()
+
 
 def init_db(db_path="cache.db"):
     conn = sqlite3.connect(db_path)
@@ -353,64 +382,94 @@ def init_db(db_path="cache.db"):
     conn.commit()
     return conn
 
+
 def is_video_cached(conn, video_hash: str) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM videos WHERE hash = ?", (video_hash,))
     return cur.fetchone() is not None
 
-def store_video_data(conn: sqlite3.Connection, video_hash: str, video_path: Path,
-                     segments: list[Segment], spans: list[SpeakerSpan]):
+
+def store_video_data(
+    conn: sqlite3.Connection,
+    video_hash: str,
+    video_path: Path,
+    segments: list[Segment],
+    spans: list[SpeakerSpan],
+):
     cur = conn.cursor()
-    cur.execute("INSERT OR IGNORE INTO videos (hash, path) VALUES (?, ?)", (video_hash, str(video_path)))
+    cur.execute(
+        "INSERT OR IGNORE INTO videos (hash, path) VALUES (?, ?)",
+        (video_hash, str(video_path)),
+    )
 
     for seg in segments:
-        cur.execute("INSERT INTO transcripts (video_hash, start, text, speaker) VALUES (?, ?, ?, ?)",
-                    (video_hash, seg.start, seg.text, seg.speaker))
+        cur.execute(
+            "INSERT INTO transcripts (video_hash, start, text, speaker) VALUES (?, ?, ?, ?)",
+            (video_hash, seg.start, seg.text, seg.speaker),
+        )
 
     for span in spans:
-        cur.execute("INSERT INTO speaker_spans (video_hash, start, end, speaker) VALUES (?, ?, ?, ?)",
-                    (video_hash, span.start, span.end, span.speaker))
+        cur.execute(
+            "INSERT INTO speaker_spans (video_hash, start, end, speaker) VALUES (?, ?, ?, ?)",
+            (video_hash, span.start, span.end, span.speaker),
+        )
 
     conn.commit()
 
-def load_video_data(conn: sqlite3.Connection, video_hash: str) -> tuple[list[Segment], list[SpeakerSpan]]:
+
+def load_video_data(
+    conn: sqlite3.Connection, video_hash: str
+) -> tuple[list[Segment], list[SpeakerSpan]]:
     cur = conn.cursor()
 
     # Load segments from transcript table
-    cur.execute("SELECT start, text, speaker FROM transcripts WHERE video_hash = ?", (video_hash,))
+    cur.execute(
+        "SELECT start, text, speaker FROM transcripts WHERE video_hash = ?",
+        (video_hash,),
+    )
     segments = [
-        Segment(start=row[0], text=row[1], speaker=row[2])
-        for row in cur.fetchall()
+        Segment(start=row[0], text=row[1], speaker=row[2]) for row in cur.fetchall()
     ]
 
     # Load speaker spans
-    cur.execute("SELECT start, end, speaker FROM speaker_spans WHERE video_hash = ?", (video_hash,))
+    cur.execute(
+        "SELECT start, end, speaker FROM speaker_spans WHERE video_hash = ?",
+        (video_hash,),
+    )
     spans = [
-        SpeakerSpan(start=row[0], end=row[1], speaker=row[2])
-        for row in cur.fetchall()
+        SpeakerSpan(start=row[0], end=row[1], speaker=row[2]) for row in cur.fetchall()
     ]
 
     return segments, spans
 
-def store_llm_response(conn: sqlite3.Connection, video_hash: str, chunk_index: int, prompt: str, response: str):
+
+def store_llm_response(
+    conn: sqlite3.Connection,
+    video_hash: str,
+    chunk_index: int,
+    prompt: str,
+    response: str,
+):
     cur = conn.cursor()
     cur.execute(
         """
         INSERT OR REPLACE INTO llm_responses (video_hash, chunk_index, prompt, response)
         VALUES (?, ?, ?, ?)
         """,
-        (video_hash, chunk_index, prompt, response)
+        (video_hash, chunk_index, prompt, response),
     )
     conn.commit()
+
 
 def load_llm_response(conn, video_hash: str, chunk_index: int) -> str | None:
     cur = conn.cursor()
     cur.execute(
         "SELECT response FROM llm_responses WHERE video_hash = ? AND chunk_index = ?",
-        (video_hash, chunk_index)
+        (video_hash, chunk_index),
     )
     row = cur.fetchone()
     return row[0] if row else None
+
 
 def get_llm_response(conn, video_hash, idx, chunk, use_cache: bool) -> str:
     prompt = build_prompt(chunk)
@@ -424,19 +483,36 @@ def get_llm_response(conn, video_hash, idx, chunk, use_cache: bool) -> str:
     print(f"\nLLM Response (new) for chunk {idx}:\n", response)
     return response
 
+
 def get_video_duration_seconds(path: Path) -> float:
     """Use ffprobe to get the duration of the video in seconds."""
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
         capture_output=True,
         text=True,
     )
     return float(probe.stdout.strip())
 
-def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: Path, should_reprocess: bool, override_cache: bool, use_cached_llm_response: bool):
+
+def detect_commercials(
+    conn: sqlite3.Connection,
+    video_path: Path,
+    output_dir: Path,
+    should_reprocess: bool,
+    override_cache: bool,
+    use_cached_llm_response: bool,
+):
     video_hash = hash_file(file_path=video_path)
-    
+
     os.makedirs(output_dir, exist_ok=True)
 
     if not override_cache and is_video_cached(conn=conn, video_hash=video_hash):
@@ -445,7 +521,9 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
             sys.exit(0)
         else:
             print("Reprocessing using cached transcription and diarization data...")
-            annotated_segments, speaker_spans = load_video_data(conn=conn, video_hash=video_hash)
+            annotated_segments, speaker_spans = load_video_data(
+                conn=conn, video_hash=video_hash
+            )
     else:
         print("Processing new video...")
         hf_token = os.getenv("HUGGINGFACE_TOKEN")
@@ -453,27 +531,43 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
             print("HUGGINGFACE_TOKEN needs to be an environment variable.")
             sys.exit(1)
 
-        audio_path: Path = extract_audio(video_path=video_path, wav_path=Path("runtime/audio.wav"))
+        audio_path: Path = extract_audio(
+            video_path=video_path, wav_path=Path("runtime/audio.wav")
+        )
         speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
         annotated_segments: list[Segment] = transcribe_with_whisper(audio_path)
-        store_video_data(conn=conn, video_hash=video_hash, video_path=video_path, segments=annotated_segments, spans=speaker_spans)
+        store_video_data(
+            conn=conn,
+            video_hash=video_hash,
+            video_path=video_path,
+            segments=annotated_segments,
+            spans=speaker_spans,
+        )
 
-    black_frame_starts: list[float] = detect_black_frames(video_path, threshold=10, min_duration=0.3)
+    black_frame_starts: list[float] = detect_black_frames(
+        video_path, threshold=10, min_duration=0.3
+    )
     for black_frame_time in black_frame_starts:
         annotated_segments.append(
             Segment(
-                start=black_frame_time,
-                text="(Visual: fade to black)",
-                speaker="Visual"
+                start=black_frame_time, text="(Visual: fade to black)", speaker="Visual"
             )
         )
 
     annotated_segments.sort(key=lambda x: x.start)
-    chunks: list[list[Segment]] = chunk_segments(annotated_segments, max_duration=1000, overlap=30)
+    chunks: list[list[Segment]] = chunk_segments(
+        annotated_segments, max_duration=1000, overlap=30
+    )
 
     all_segments: list[LabeledSegment] = []
     for i, chunk in enumerate(chunks):
-        response: str = get_llm_response(conn=conn, video_hash=video_hash, idx=i, chunk=chunk, use_cache=use_cached_llm_response)
+        response: str = get_llm_response(
+            conn=conn,
+            video_hash=video_hash,
+            idx=i,
+            chunk=chunk,
+            use_cache=use_cached_llm_response,
+        )
         labels: list[LabeledSegment] = extract_labeled_segments(response=response)
         all_segments.extend(labels)
 
@@ -484,10 +578,16 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
             seen.add(labeled_segment)
             deduped.append(labeled_segment)
 
-    deduped.sort(key=lambda labeled_segment: parse_timestamp_to_seconds(labeled_segment.start))
+    deduped.sort(
+        key=lambda labeled_segment: parse_timestamp_to_seconds(labeled_segment.start)
+    )
 
-    sensitive_markers: list[float] = detect_black_frames(video_path, threshold=20, min_duration=0.03)
-    adjusted_segments: list[LabeledSegment] = adjust_segments_to_black_frames(deduped, sensitive_markers)
+    sensitive_markers: list[float] = detect_black_frames(
+        video_path, threshold=20, min_duration=0.03
+    )
+    adjusted_segments: list[LabeledSegment] = adjust_segments_to_black_frames(
+        deduped, sensitive_markers
+    )
 
     print("\n=== Final Labeled Segments ===")
     for segment in adjusted_segments:
@@ -500,26 +600,48 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
     for segment in adjusted_segments:
         base_name = segment.label.lower()
         count = counters.get(base_name, 0)
-        filename = os.path.join(output_dir, f"{base_name}{'' if count == 0 else f'_{count}'}.mp4")
+        filename = os.path.join(
+            output_dir, f"{base_name}{'' if count == 0 else f'_{count}'}.mp4"
+        )
         counters[base_name] = count + 1
 
         cmd = [
-            "ffmpeg", "-y", "-i", video_path,
-            "-ss", segment.start, "-to", segment.end,
-            "-c:v", "libx264", "-c:a", "aac",
-            filename
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-ss",
+            segment.start,
+            "-to",
+            segment.end,
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            filename,
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"Saved: {filename}")
+
 
 # --- Main ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("video_file", help="Path to video file")
-    parser.add_argument("--output_dir", default="clips", help="Directory to save video segments")
-    parser.add_argument("--reprocess", action="store_true", help="Reprocess even if video is cached")
-    parser.add_argument("--override_cache", action="store_true", help="Do not use the cache")
-    parser.add_argument("--use_cached_llm_response", action="store_true", help="Use the cached LLM response")
+    parser.add_argument(
+        "--output_dir", default="clips", help="Directory to save video segments"
+    )
+    parser.add_argument(
+        "--reprocess", action="store_true", help="Reprocess even if video is cached"
+    )
+    parser.add_argument(
+        "--override_cache", action="store_true", help="Do not use the cache"
+    )
+    parser.add_argument(
+        "--use_cached_llm_response",
+        action="store_true",
+        help="Use the cached LLM response",
+    )
     args = parser.parse_args()
 
     input_path: Path = Path(args.video_file)
@@ -532,10 +654,13 @@ if __name__ == "__main__":
     if input_path.is_file():
         video_files = [input_path]
     elif input_path.is_dir():
-        video_files = sorted([
-            f for f in input_path.iterdir()
-            if f.suffix.lower() in (".mp4", ".mkv", ".mov", ".avi") and f.is_file()
-        ])
+        video_files = sorted(
+            [
+                f
+                for f in input_path.iterdir()
+                if f.suffix.lower() in (".mp4", ".mkv", ".mov", ".avi") and f.is_file()
+            ]
+        )
     else:
         print(f"Error: {input_path} is not a valid file or directory.")
         sys.exit(1)
@@ -545,7 +670,7 @@ if __name__ == "__main__":
     estimated_tokens = total_minutes * TOKENS_PER_MINUTE
     price = (estimated_tokens / 1000) * PRICE_PER_1K_TOKENS_IN_DOLLARS
 
-    print(f"\n=== Batch Summary ===")
+    print("\n=== Batch Summary ===")
     print(f"Total videos: {len(video_files)}")
     print(f"Total video duration: {total_minutes:.2f} minutes")
     print(f"Estimated total token usage: {int(estimated_tokens)} tokens")
@@ -567,5 +692,3 @@ if __name__ == "__main__":
             override_cache=override_cache,
             use_cached_llm_response=use_cached_llm_response,
         )
-
-    

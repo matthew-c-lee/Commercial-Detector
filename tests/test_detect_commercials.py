@@ -1,9 +1,14 @@
-from src.detect_commercials import detect_commercials, init_db, get_video_duration_seconds
+from src.detect_commercials import (
+    detect_commercials,
+    init_db,
+    get_video_duration_seconds,
+)
 from pathlib import Path
+
 
 def test_detect_commercials():
     db = init_db(db_path="tests/test-cache.db")
-    
+
     output_dir = Path("tests/output")
     detect_commercials(
         conn=db,
@@ -11,7 +16,7 @@ def test_detect_commercials():
         output_dir=output_dir,
         should_reprocess=True,
         override_cache=False,
-        use_cached_llm_response=True
+        use_cached_llm_response=True,
     )
 
     results = []
@@ -28,4 +33,3 @@ def test_detect_commercials():
     ]
 
     assert results == expected_results
-
