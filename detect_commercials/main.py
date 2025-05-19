@@ -625,7 +625,7 @@ def ensure_env_vars():
     if not missing:
         return
 
-    print("\n⚠️  Missing environment variables:")
+    print("\nMissing environment variables:")
 
     for key in missing:
         value = input(f"Enter value for {key}: ").strip()
@@ -634,7 +634,7 @@ def ensure_env_vars():
             sys.exit(1)
         set_key(str(DOTENV_PATH), key, value)
 
-    print(f"\n✅ Saved to {DOTENV_PATH}")
+    print(f"\nSaved to {DOTENV_PATH}")
 
 
 def main() -> None:
