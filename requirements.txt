@@ -1,10 +1,7 @@
 ffmpeg
-scenedetect[opencv]
 opencv-python
-imagehash
 Pillow
 git+https://github.com/openai/whisper.git
-sentence-transformers
 ffmpeg-python
 ollama
 pyannote-audio
