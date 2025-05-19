@@ -7,6 +7,9 @@ from pathlib import Path
 
 
 def test_detect_commercials() -> None:
+    """
+    Integration test, but without actually calling out to OpenAI or using PyAnnote
+    """
     db = init_db(db_path="tests/test-cache.db")
 
     output_dir = Path("tests/output")
