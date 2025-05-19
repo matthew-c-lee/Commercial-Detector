@@ -1,0 +1,5 @@
+[project]
+name = "commercial-detection"
+version = "1.0.0"
+description = "Detects and separates individual commercials from a videos containing them."
+requires-python = ">=3.11.0"
