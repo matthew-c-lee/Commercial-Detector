@@ -86,9 +86,6 @@ class LabeledSegment:
     end: str
 
 
-# --- Utility functions ---
-
-
 def format_timestamp(seconds: float) -> str:
     td = timedelta(seconds=seconds)
     total_seconds = int(td.total_seconds())
@@ -105,9 +102,6 @@ def parse_timestamp_to_seconds(ts: str) -> float:
         hours, minutes, seconds = parts
         return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     return 0
-
-
-# --- Visual Analysis: Black Frame Detection ---
 
 
 def detect_black_frames(
@@ -173,9 +167,6 @@ def adjust_segments_to_black_frames(
             )
 
     return adjusted
-
-
-# --- Audio + Transcription + Diarization ---
 
 
 def extract_audio(video_path: Path, wav_path: Path) -> Path:
@@ -246,9 +237,6 @@ def assign_speakers_to_segments(
     return annotated
 
 
-# --- Chunking ---
-
-
 def chunk_segments(
     segments: list[Segment], max_duration: float = 1000, overlap: float = 50
 ) -> list[list[Segment]]:
@@ -278,9 +266,6 @@ def chunk_segments(
             break
         start_idx = next_idx
     return chunks
-
-
-# --- LLM Interaction ---
 
 
 def call_ollama(prompt: str, model: str = "mistral-deterministic") -> str | None:
@@ -632,7 +617,6 @@ def detect_commercials(
         print(f"Saved: {filename}")
 
 
-# --- Main ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("video_file", help="Path to video file")
@@ -673,7 +657,7 @@ if __name__ == "__main__":
         print(f"Error: {input_path} is not a valid file or directory.")
         sys.exit(1)
 
-    # --- Estimate total cost ---
+    # Estimate total cost
     total_minutes = sum(get_video_duration_seconds(f) for f in video_files) / 60
     estimated_tokens = total_minutes * TOKENS_PER_MINUTE
     price = (estimated_tokens / 1000) * PRICE_PER_1K_TOKENS_IN_DOLLARS
