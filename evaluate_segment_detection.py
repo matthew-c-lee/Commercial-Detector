@@ -2,8 +2,6 @@ import re
 from datetime import timedelta
 from collections import defaultdict
 
-# --- Parsing utilities ---
-
 
 def parse_label_blocks(text: str) -> list[tuple[str, int, int]]:
     """
@@ -34,9 +32,6 @@ def parse_timestamp_to_seconds(ts: str) -> int:
 
 def format_seconds(s: int) -> str:
     return str(timedelta(seconds=int(s)))
-
-
-# --- Evaluation utilities ---
 
 
 def iou(a_start: int, a_end: int, b_start: int, b_end: int) -> float:
@@ -116,8 +111,6 @@ def compute_metrics(
         }
     return metrics
 
-
-# --- Main
 
 if __name__ == "__main__":
     import sys
