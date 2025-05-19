@@ -27,13 +27,13 @@ HUGGINGFACE_TOKEN=your_huggingface_token
 
 ## Command line usage:
 ```sh
-python detect.py <video_file_or_directory> [options]
+python detect_commercials.py <video_file_or_directory> [options]
 ```
 
 | Option | Description |
 |-|-|
 | video_file (required) | Path to a video file (e.g., .mp4) or a directory of videos |
-| --output_dir | Directory to save extracted clips (default: clips) |
+| --output_dir (required) | Directory to save extracted clips |
 | --reprocess | Forces reprocessing even if the video is already cached |
 | --override_cache | Ignores the entire cache and processes everything from scratch |
 | --use_cached_llm_response	Uses cached LLM results if available (mainly for testing) |
