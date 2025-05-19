@@ -490,13 +490,9 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
     adjusted_segments: list[LabeledSegment] = adjust_segments_to_black_frames(deduped, sensitive_markers)
 
     print("\n=== Final Labeled Segments ===")
-    with open(output_file, "w") as f:
-        for segment in adjusted_segments:
-            line = f"{segment.label} [{segment.start} - {segment.end}]"
-            print(line)
-            f.write(line + "\n")
-
-    print(f"\nResults saved to: {output_file}")
+    for segment in adjusted_segments:
+        line = f"{segment.label} [{segment.start} - {segment.end}]"
+        print(line)
 
     print("\nExporting individual video segments...")
     counters = {}
