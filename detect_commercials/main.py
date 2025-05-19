@@ -619,6 +619,7 @@ def detect_commercials(
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"Saved: {filename}")
 
+
 def ensure_env_vars():
     missing = [key for key in REQUIRED_KEYS if not os.getenv(key)]
     if not missing:
@@ -635,9 +636,10 @@ def ensure_env_vars():
 
     print(f"\n✅ Saved to {DOTENV_PATH}")
 
+
 def main() -> None:
     ensure_env_vars()
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument("video_file", help="Path to video file")
     parser.add_argument(
@@ -704,6 +706,7 @@ def main() -> None:
             override_cache=override_cache,
             use_cached_llm_response=use_cached_llm_response,
         )
+
 
 if __name__ == "__main__":
     main()
