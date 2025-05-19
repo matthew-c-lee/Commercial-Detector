@@ -8,7 +8,7 @@ import argparse
 import os
 import cv2
 import numpy as np
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 import tiktoken
 from openai import OpenAI
 import sys
@@ -17,7 +17,10 @@ from pathlib import Path
 import hashlib
 import sqlite3
 
-load_dotenv()
+DOTENV_PATH = Path.home() / ".env"
+load_dotenv(dotenv_path=DOTENV_PATH)
+
+REQUIRED_KEYS = ["HUGGINGFACE_TOKEN", "OPENAI_API_KEY"]
 
 TOKENS_PER_MINUTE = 527
 PRICE_PER_1K_TOKENS_IN_DOLLARS = 0.005
@@ -616,8 +619,25 @@ def detect_commercials(
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"Saved: {filename}")
 
+def ensure_env_vars():
+    missing = [key for key in REQUIRED_KEYS if not os.getenv(key)]
+    if not missing:
+        return
+
+    print("\n⚠️  Missing environment variables:")
+
+    for key in missing:
+        value = input(f"Enter value for {key}: ").strip()
+        if not value:
+            print(f"Aborted: {key} is required.")
+            sys.exit(1)
+        set_key(str(DOTENV_PATH), key, value)
+
+    print(f"\n✅ Saved to {DOTENV_PATH}")
 
 def main() -> None:
+    ensure_env_vars()
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("video_file", help="Path to video file")
     parser.add_argument(
