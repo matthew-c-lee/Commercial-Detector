@@ -55,8 +55,8 @@ python detect_commercials.py <video_file_or_directory> [options]
         bump [00:01:55 - 00:02:05]
         ```
 
-- We refine the timestamps by aligning them with fade-to-black moments in the video. 
-- The LLM gets us most of the way there, but it's not perfect for exact timings of the segment boundaries. This way, we can get the best of both worlds.
+    - We refine the timestamps by aligning them with fade-to-black moments in the video. 
+    - The LLM gets us most of the way there, but it's not perfect for exact timings of the segment boundaries. This way, we can get the best of both worlds.
 
 7. Output:
     - Clips of each labeled segment (e.g., trix_cereal.mp4, bump_1.mp4, etc.) are exported into the --output_dir.
