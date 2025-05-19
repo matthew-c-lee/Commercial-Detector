@@ -208,7 +208,7 @@ opencv-python==4.11.0.86
     # via -r requirements.in
 optuna==4.3.0
     # via pyannote-pipeline
-packaging==24.2
+packaging==25.0
     # via
     #   huggingface-hub
     #   lightning
