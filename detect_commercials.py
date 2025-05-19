@@ -19,6 +19,9 @@ import sqlite3
 
 load_dotenv()
 
+TOKENS_PER_MINUTE = 527
+PRICE_PER_1K_TOKENS_IN_DOLLARS = 0.005
+
 @dataclass
 class Segment:
     start: float
@@ -413,20 +416,20 @@ def get_llm_response(conn, video_hash, idx, chunk, use_cache: bool) -> str:
         if cached:
             print(f"\nLoaded cached LLM response for chunk {idx}")
             return cached
-    # response = call_openai(prompt)
-    response = """
-Commercial [00:00:06 - 00:01:03]
-Commercial [00:01:07 - 00:01:35]
-Commercial [00:01:37 - 00:02:30]
-Commercial [00:03:23 - 00:03:49]
-Commercial [00:04:10 - 00:05:07]
-Bump [00:05:08 - 00:05:09]
-Commercial [00:05:09 - 00:05:52]
-Bump [00:05:54 - 00:05:57]
-"""
+    response = call_openai(prompt)
     store_llm_response(conn, video_hash, idx, prompt, response)
     print(f"\nLLM Response (new) for chunk {idx}:\n", response)
     return response
+
+def get_video_duration_seconds(path: Path) -> float:
+    """Use ffprobe to get the duration of the video in seconds."""
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True,
+        text=True,
+    )
+    return float(probe.stdout.strip())
 
 def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: Path, should_reprocess: bool, override_cache: bool, use_cached_llm_response: bool):
     video_hash = hash_file(file_path=video_path)
@@ -521,21 +524,50 @@ if __name__ == "__main__":
     parser.add_argument("--use_cached_llm_response", action="store_true", help="Use the cached LLM response")
     args = parser.parse_args()
 
-    video_path: Path = Path(args.video_file)
+    input_path: Path = Path(args.video_file)
     output_dir: Path = Path(args.output_dir)
     should_reprocess: bool = args.reprocess
     override_cache: bool = args.override_cache
     use_cached_llm_response: bool = args.use_cached_llm_response
 
+    video_files = []
+    if input_path.is_file():
+        video_files = [input_path]
+    elif input_path.is_dir():
+        video_files = sorted([
+            f for f in input_path.iterdir()
+            if f.suffix.lower() in (".mp4", ".mkv", ".mov", ".avi") and f.is_file()
+        ])
+    else:
+        print(f"Error: {input_path} is not a valid file or directory.")
+        sys.exit(1)
+
+    # --- Estimate total cost ---
+    total_minutes = sum(get_video_duration_seconds(f) for f in video_files) / 60
+    estimated_tokens = total_minutes * TOKENS_PER_MINUTE
+    price = (estimated_tokens / 1000) * PRICE_PER_1K_TOKENS_IN_DOLLARS
+
+    print(f"\n=== Batch Summary ===")
+    print(f"Total videos: {len(video_files)}")
+    print(f"Total video duration: {total_minutes:.2f} minutes")
+    print(f"Estimated total token usage: {int(estimated_tokens)} tokens")
+    print(f"Estimated total API cost: ${price:.2f}")
+
+    confirm = input("Proceed with LLM calls for all videos? (y/n): ").strip().lower()
+    if confirm not in ("y", "yes"):
+        print("Aborted by user.")
+        sys.exit(0)
+
     db = init_db()
 
-    detect_commercials(
-        conn=db,
-        video_path=video_path,
-        output_dir=output_dir,
-        should_reprocess=should_reprocess,
-        override_cache=override_cache,
-        use_cached_llm_response=use_cached_llm_response,
-    )
+    for video_path in video_files:
+        detect_commercials(
+            conn=db,
+            video_path=video_path,
+            output_dir=output_dir,
+            should_reprocess=should_reprocess,
+            override_cache=override_cache,
+            use_cached_llm_response=use_cached_llm_response,
+        )
 
     
