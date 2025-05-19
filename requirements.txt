@@ -1,7 +1,7 @@
 ffmpeg==1.4
 opencv-python==4.11.0.86
 Pillow==11.2.1
-git+https://github.com/openai/whisper.git @ git+https://github.com/openai/whisper.git@dd985ac4b90cafeef8712f2998d62c59c3e62d22
+openai-whisper @ git+https://github.com/openai/whisper.git@dd985ac4b90cafeef8712f2998d62c59c3e62d22
 ffmpeg-python==0.2.0
 ollama==0.4.8
 pyannote-audio==3.3.2
