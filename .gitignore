@@ -5,3 +5,5 @@ runtime
 output
 cache.db
 input
+
+*.pyc
