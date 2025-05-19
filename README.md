@@ -14,8 +14,8 @@ It uses:
     - Alternatively, you can use ollama, but I found its results very poor in comparison.
     - My usage costs were under $0.10 for over an hour of commercials, which was acceptable for my purposes.
 - Access to two huggingface projects by pyannote:
-    - Speaker Diarization: https://huggingface.co/pyannote/speaker-diarization-3.1
-    - Segmentation: https://huggingface.co/pyannote/segmentation-3.0
+    - [Speaker Diarization](https://huggingface.co/pyannote/speaker-diarization-3.1)
+    - [Segmentation](https://huggingface.co/pyannote/segmentation-3.0)
 - A .env file with the following environment variables:
     ```env
     OPENAI_API_KEY=your_openai_key
