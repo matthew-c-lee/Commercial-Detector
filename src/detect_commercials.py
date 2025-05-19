@@ -89,14 +89,14 @@ class LabeledSegment:
 # --- Utility functions ---
 
 
-def format_timestamp(seconds: float):
+def format_timestamp(seconds: float) -> str:
     td = timedelta(seconds=seconds)
     total_seconds = int(td.total_seconds())
     milliseconds = int((td.total_seconds() - total_seconds) * 1000)
     return str(td).split(".")[0] + f".{milliseconds:03}"
 
 
-def parse_timestamp_to_seconds(ts):
+def parse_timestamp_to_seconds(ts: str) -> float:
     parts = ts.split(":")
     if len(parts) == 2:
         minutes, seconds = parts
@@ -148,12 +148,12 @@ def detect_black_frames(
 
 
 def adjust_segments_to_black_frames(
-    labeled_segments: list[LabeledSegment], black_frame_times
+    labeled_segments: list[LabeledSegment], black_frame_times: list[float]
 ) -> list[LabeledSegment]:
     adjusted = []
     black_seconds = sorted(bf for bf in black_frame_times)
 
-    def find_closest(time):
+    def find_closest(time: float) -> float:
         return (
             min(black_seconds, key=lambda x: abs(x - time)) if black_seconds else time
         )
@@ -283,7 +283,7 @@ def chunk_segments(
 # --- LLM Interaction ---
 
 
-def call_ollama(prompt, model="mistral-deterministic"):
+def call_ollama(prompt: str, model: str = "mistral-deterministic") -> str | None:
     print("Calling local LLM...")
     result = subprocess.run(
         ["ollama", "run", model], input=prompt, text=True, capture_output=True
@@ -291,7 +291,7 @@ def call_ollama(prompt, model="mistral-deterministic"):
     return result.stdout.strip()
 
 
-def call_openai(prompt, model="gpt-4o"):
+def call_openai(prompt: str, model: str = "gpt-4o") -> str:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     print("Calling OpenAI API...")
     response = client.chat.completions.create(
@@ -307,7 +307,7 @@ def call_openai(prompt, model="gpt-4o"):
     return answer.strip()
 
 
-def build_prompt(segments: list[Segment]):
+def build_prompt(segments: list[Segment]) -> str:
     transcript_text = "\n".join(
         f"[{format_timestamp(seg.start)}] (Speaker: {seg.speaker}) {seg.text}"
         for seg in segments
@@ -341,7 +341,7 @@ def hash_file(file_path: Path) -> str:
     return hasher.hexdigest()
 
 
-def init_db(db_path="cache.db"):
+def init_db(db_path: str = "cache.db") -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
@@ -383,7 +383,7 @@ def init_db(db_path="cache.db"):
     return conn
 
 
-def is_video_cached(conn, video_hash: str) -> bool:
+def is_video_cached(conn: sqlite3.Connection, video_hash: str) -> bool:
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM videos WHERE hash = ?", (video_hash,))
     return cur.fetchone() is not None
@@ -395,7 +395,7 @@ def store_video_data(
     video_path: Path,
     segments: list[Segment],
     spans: list[SpeakerSpan],
-):
+) -> None:
     cur = conn.cursor()
     cur.execute(
         "INSERT OR IGNORE INTO videos (hash, path) VALUES (?, ?)",
@@ -449,7 +449,7 @@ def store_llm_response(
     chunk_index: int,
     prompt: str,
     response: str,
-):
+) -> None:
     cur = conn.cursor()
     cur.execute(
         """
@@ -461,7 +461,9 @@ def store_llm_response(
     conn.commit()
 
 
-def load_llm_response(conn, video_hash: str, chunk_index: int) -> str | None:
+def load_llm_response(
+    conn: sqlite3.Connection, video_hash: str, chunk_index: int
+) -> str | None:
     cur = conn.cursor()
     cur.execute(
         "SELECT response FROM llm_responses WHERE video_hash = ? AND chunk_index = ?",
@@ -471,7 +473,13 @@ def load_llm_response(conn, video_hash: str, chunk_index: int) -> str | None:
     return row[0] if row else None
 
 
-def get_llm_response(conn, video_hash, idx, chunk, use_cache: bool) -> str:
+def get_llm_response(
+    conn: sqlite3.Connection,
+    video_hash: str,
+    idx: int,
+    chunk: list[Segment],
+    use_cache: bool,
+) -> str:
     prompt = build_prompt(chunk)
     if use_cache:
         cached = load_llm_response(conn, video_hash, idx)
@@ -510,7 +518,7 @@ def detect_commercials(
     should_reprocess: bool,
     override_cache: bool,
     use_cached_llm_response: bool,
-):
+) -> None:
     video_hash = hash_file(file_path=video_path)
 
     os.makedirs(output_dir, exist_ok=True)

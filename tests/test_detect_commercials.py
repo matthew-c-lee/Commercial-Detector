@@ -6,7 +6,7 @@ from src.detect_commercials import (
 from pathlib import Path
 
 
-def test_detect_commercials():
+def test_detect_commercials() -> None:
     db = init_db(db_path="tests/test-cache.db")
 
     output_dir = Path("tests/output")
