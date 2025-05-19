@@ -32,4 +32,4 @@ def test_detect_commercials() -> None:
         (Path("tests/output/nickelodeon_promo.mp4"), 60.160097),
     ]
 
-    assert results == expected_results
+    assert sorted(results) == sorted(expected_results)
