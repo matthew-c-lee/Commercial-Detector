@@ -45,18 +45,18 @@ python detect_commercials.py <video_file_or_directory> [options]
 3. Diarization: Speaker identification is performed using PyAnnote + HuggingFace.
 4. Visual Cue Detection: Black frames are detected to help identify transitions.
 5. Segmentation:
-- Segments are chunked.
-- Prompts are sent to an LLM (gpt-4o or ollama) asking it to identify commercials/bumps.
-- Segments are labeled using timestamps.
+    - Segments are chunked.
+    - Prompts are sent to an LLM (gpt-4o or ollama) asking it to identify commercials/bumps.
+    - Segments are labeled using timestamps.
 6. Snapping to closest "fade to black" time:
-- After the LLM returns labeled segments like:
+    - After the LLM returns labeled segments like:
 
 ```
 trix_cereal [00:01:05 - 00:01:55]
 bump [00:01:55 - 00:02:05]
 ```
-- We refines the timestamps by aligning them with fade-to-black moments in the video. 
-- The LLM gets us most of the way there, but it's not perfect for exact timings of the segment boundaries. This way, we can get the best of both worlds.
+    - We refines the timestamps by aligning them with fade-to-black moments in the video. 
+    - The LLM gets us most of the way there, but it's not perfect for exact timings of the segment boundaries. This way, we can get the best of both worlds.
 
 7. Output:
-- Clips of each labeled segment (e.g., trix_cereal.mp4, bump_1.mp4, etc.) are exported into the --output_dir.
+    - Clips of each labeled segment (e.g., trix_cereal.mp4, bump_1.mp4, etc.) are exported into the --output_dir.
