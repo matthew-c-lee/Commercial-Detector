@@ -51,7 +51,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
-    continue-on-error: true
+    continue-on-error: false
     steps:
     - uses: actions/checkout@v4
 
