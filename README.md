@@ -33,7 +33,7 @@ python detect_commercials.py <video_file_or_directory> [options]
 | --output_dir (required) | Directory to save extracted clips |
 | --reprocess | Forces reprocessing even if the video is already cached |
 | --override_cache | Ignores the entire cache and processes everything from scratch |
-| --use_cached_llm_response	Uses cached LLM results if available (mainly for testing) |
+| --use_cached_llm_response	| Uses cached LLM results if available (mainly for testing) |
 
 ## How it works
 
