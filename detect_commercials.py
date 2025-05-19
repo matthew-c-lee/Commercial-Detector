@@ -438,7 +438,6 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
     video_hash = hash_file(file_path=video_path)
     
     os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, "prediction.txt")
 
     if not override_cache and is_video_cached(conn=conn, video_hash=video_hash):
         if not should_reprocess:
