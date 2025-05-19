@@ -617,7 +617,7 @@ def detect_commercials(
         print(f"Saved: {filename}")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("video_file", help="Path to video file")
     parser.add_argument(
@@ -684,3 +684,6 @@ if __name__ == "__main__":
             override_cache=override_cache,
             use_cached_llm_response=use_cached_llm_response,
         )
+
+if __name__ == "__main__":
+    main()

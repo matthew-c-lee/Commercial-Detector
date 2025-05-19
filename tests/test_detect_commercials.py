@@ -1,4 +1,4 @@
-from src.detect_commercials import (
+from detect_commercials.main import (
     detect_commercials,
     init_db,
     get_video_duration_seconds,
