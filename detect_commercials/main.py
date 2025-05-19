@@ -499,6 +499,25 @@ def get_video_duration_seconds(path: Path) -> float:
     return float(probe.stdout.strip())
 
 
+def get_unique_filename(output_dir, base_name):
+    base_pattern = re.compile(rf"^{re.escape(base_name)}(?:_(\d+))?\.mp4$")
+    existing = [fname for fname in os.listdir(output_dir) if base_pattern.match(fname)]
+
+    existing_indices = set()
+    for fname in existing:
+        match = base_pattern.match(fname)
+        if match:
+            idx = match.group(1)
+            existing_indices.add(int(idx) if idx else 0)
+
+    count = 0
+    while count in existing_indices:
+        count += 1
+
+    suffix = f"_{count}" if count > 0 else ""
+    return os.path.join(output_dir, f"{base_name}{suffix}.mp4")
+
+
 def detect_commercials(
     conn: sqlite3.Connection,
     video_path: Path,
@@ -591,15 +610,9 @@ def detect_commercials(
         print(line)
 
     print("\nExporting individual video segments...")
-    counters = {}
-
     for segment in adjusted_segments:
         base_name = segment.label.lower()
-        count = counters.get(base_name, 0)
-        filename = os.path.join(
-            output_dir, f"{base_name}{'' if count == 0 else f'_{count}'}.mp4"
-        )
-        counters[base_name] = count + 1
+        filename = get_unique_filename(output_dir, base_name)
 
         cmd = [
             "ffmpeg",
