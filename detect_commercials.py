@@ -21,6 +21,43 @@ load_dotenv()
 
 TOKENS_PER_MINUTE = 527
 PRICE_PER_1K_TOKENS_IN_DOLLARS = 0.005
+PROMPT = f"""
+You are analyzing a transcript from a video that contains:
+- Commercials (paid advertisements)
+- Bumps (brief channel-branded clips or transitions)
+- Show content, cartoons, or dead air
+
+Each line includes a timestamp and speaker ID.
+
+Your job is to segment the transcript and return ONLY the portions that are clearly:
+- Commercial
+- Bump
+
+BUMPS ARE AT LEAST 5 SECONDS LONG
+
+All other content should be ignored.
+
+For each **Commercial**, infer what product, brand, or service is being advertised.
+Use that as the label. If it’s unclear, use a short descriptive label.
+Use **lowercase letters** and **underscores instead of spaces**.
+
+For example:
+- A cereal ad → `honey_nut_cheerios`
+- A DVD ad → `shrek_2_dvd`
+- A generic promo → `nickelodeon_promo`
+
+Use speaker changes and **shifts in tone or intent**, as well as visual fade-to-black cues, to find transitions.
+
+If there are two different commercials one after the other, list them separately!
+
+Return your output in this format:
+honey_nut_cheerios [00:00:05 - 00:01:05]
+Bump [00:01:05 - 00:01:15]
+
+(DO NOT INCLUDE OTHER TEXT)
+
+Transcript:
+"""
 
 @dataclass
 class Segment:
@@ -246,51 +283,14 @@ def build_prompt(segments: list[Segment]):
 
     print(f"{transcript_text=}")
 
-    prompt = f"""
-You are analyzing a transcript from a video that contains:
-- Commercials (paid advertisements)
-- Bumps (brief channel-branded clips or transitions)
-- Show content, cartoons, or dead air
-
-Each line includes a timestamp and speaker ID.
-
-Your job is to segment the transcript and return ONLY the portions that are clearly:
-- Commercial
-- Bump
-
-BUMPS ARE AT LEAST 5 SECONDS LONG
-
-All other content should be ignored.
-
-For each **Commercial**, infer what product, brand, or service is being advertised.
-Use that as the label. If it’s unclear, use a short descriptive label.
-Use **lowercase letters** and **underscores instead of spaces**.
-
-For example:
-- A cereal ad → `honey_nut_cheerios`
-- A DVD ad → `shrek_2_dvd`
-- A generic promo → `nickelodeon_promo`
-
-Use speaker changes and **shifts in tone or intent**, as well as visual fade-to-black cues, to find transitions.
-
-If there are two different commercials one after the other, list them separately!
-
-Return your output in this format:
-Commercial [00:00:05 - 00:01:05]
-Bump [00:01:05 - 00:01:15]
-
-(DO NOT INCLUDE OTHER TEXT)
-
-Transcript:
-{textwrap.indent(transcript_text, '  ')}
-"""
+    prompt = f"{PROMPT}\n{textwrap.indent(transcript_text, '  ')}"
     enc = tiktoken.encoding_for_model("gpt-4o")
     tokens = len(enc.encode(prompt))
     print(f"The prompt is {tokens} tokens.")
     return prompt
 
 def extract_labeled_segments(response: str) -> list[LabeledSegment]:
-    pattern = r'(Commercial|Bump)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]'
+    pattern = r'([a-zA-Z0-9_]+)\s*\[\s*([\d:]+)\s*-\s*([\d:]+)\s*\]'
     results: list[LabeledSegment] = []
     for match in re.finditer(pattern, response, flags=re.IGNORECASE):
         label = match.group(1).capitalize()
@@ -395,7 +395,10 @@ def load_video_data(conn: sqlite3.Connection, video_hash: str) -> tuple[list[Seg
 def store_llm_response(conn: sqlite3.Connection, video_hash: str, chunk_index: int, prompt: str, response: str):
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO llm_responses (video_hash, chunk_index, prompt, response) VALUES (?, ?, ?, ?)",
+        """
+        INSERT OR REPLACE INTO llm_responses (video_hash, chunk_index, prompt, response)
+        VALUES (?, ?, ?, ?)
+        """,
         (video_hash, chunk_index, prompt, response)
     )
     conn.commit()
@@ -437,7 +440,7 @@ def detect_commercials(conn: sqlite3.Connection, video_path: Path, output_dir: P
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "prediction.txt")
 
-    if is_video_cached(conn=conn, video_hash=video_hash) and not override_cache:
+    if not override_cache and is_video_cached(conn=conn, video_hash=video_hash):
         if not should_reprocess:
             print("Video already processed. Skipping...")
             sys.exit(0)
