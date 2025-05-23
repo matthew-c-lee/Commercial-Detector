@@ -149,18 +149,21 @@ def adjust_segments_to_black_frames(
     labeled_segments: list[LabeledSegment], black_frame_times: list[float]
 ) -> list[LabeledSegment]:
     adjusted = []
-    black_seconds = sorted(bf for bf in black_frame_times)
+    black_seconds = sorted(black_frame_times)
 
-    def find_closest(time: float) -> float:
-        return (
-            min(black_seconds, key=lambda x: abs(x - time)) if black_seconds else time
-        )
+    def find_closest_earlier(time: float) -> float:
+        earlier = [t for t in black_seconds if t <= time]
+        return max(earlier) if earlier else time
+
+    def find_closest_later(time: float) -> float:
+        later = [t for t in black_seconds if t >= time]
+        return min(later) if later else time
 
     for segment in labeled_segments:
         start_sec = parse_timestamp_to_seconds(segment.start)
         end_sec = parse_timestamp_to_seconds(segment.end)
-        new_start = find_closest(start_sec)
-        new_end = find_closest(end_sec)
+        new_start = find_closest_earlier(start_sec)
+        new_end = find_closest_later(end_sec)
         if new_end > new_start:
             adjusted.append(
                 LabeledSegment(
