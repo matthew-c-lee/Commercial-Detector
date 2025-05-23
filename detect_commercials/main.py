@@ -18,6 +18,7 @@ import hashlib
 import sqlite3
 
 DOTENV_PATH = Path.home() / ".env"
+print(DOTENV_PATH)
 load_dotenv(dotenv_path=DOTENV_PATH)
 
 REQUIRED_KEYS = ["HUGGINGFACE_TOKEN", "OPENAI_API_KEY"]
@@ -533,7 +534,7 @@ def detect_commercials(
     if not override_cache and is_video_cached(conn=conn, video_hash=video_hash):
         if not should_reprocess:
             print("Video already processed. Skipping...")
-            sys.exit(0)
+            return
         else:
             print("Reprocessing using cached transcription and diarization data...")
             annotated_segments, speaker_spans = load_video_data(
