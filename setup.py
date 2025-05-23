@@ -8,7 +8,7 @@ def parse_requirements(filename):
 
 setup(
     name="detect-commercials",
-    version="0.1.0",
+    version="1.0.0",
     packages=find_packages(exclude=["tests*", "test*"]),
     install_requires=parse_requirements("requirements.txt"),
     entry_points={
