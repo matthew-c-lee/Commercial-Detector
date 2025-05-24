@@ -150,6 +150,11 @@ def adjust_segments_to_black_frames(
 ) -> list[LabeledSegment]:
     adjusted = []
     black_seconds = sorted(black_frame_times)
+    tolerance = 1.0
+
+    def find_within_tolerance(time: float) -> float | None:
+        close = [bf for bf in black_seconds if abs(bf - time) <= tolerance]
+        return min(close, key=lambda x: abs(x - time)) if close else None
 
     def find_closest_earlier(time: float) -> float:
         earlier = [t for t in black_seconds if t <= time]
@@ -162,8 +167,13 @@ def adjust_segments_to_black_frames(
     for segment in labeled_segments:
         start_sec = parse_timestamp_to_seconds(segment.start)
         end_sec = parse_timestamp_to_seconds(segment.end)
-        new_start = find_closest_earlier(start_sec)
-        new_end = find_closest_later(end_sec)
+
+        start_adj = find_within_tolerance(start_sec)
+        end_adj = find_within_tolerance(end_sec)
+
+        new_start = start_adj if start_adj is not None else find_closest_earlier(start_sec)
+        new_end = end_adj if end_adj is not None else find_closest_later(end_sec)
+
         if new_end > new_start:
             adjusted.append(
                 LabeledSegment(
@@ -174,6 +184,8 @@ def adjust_segments_to_black_frames(
             )
 
     return adjusted
+
+
 
 
 def extract_audio(video_path: Path, wav_path: Path) -> Path:
@@ -554,7 +566,8 @@ def detect_commercials(
             video_path=video_path, wav_path=Path("runtime/audio.wav")
         )
         speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
-        annotated_segments: list[Segment] = transcribe_with_whisper(audio_path)
+        raw_segments: list[Segment] = transcribe_with_whisper(audio_path)
+        annotated_segments: list[Segment] = assign_speakers_to_segments(raw_segments, speaker_spans)
         store_video_data(
             conn=conn,
             video_hash=video_hash,
