@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 
-def parse_requirements(filename):
+def parse_requirements(filename: str) -> list[str]:
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 

@@ -171,7 +171,9 @@ def adjust_segments_to_black_frames(
         start_adj = find_within_tolerance(start_sec)
         end_adj = find_within_tolerance(end_sec)
 
-        new_start = start_adj if start_adj is not None else find_closest_earlier(start_sec)
+        new_start = (
+            start_adj if start_adj is not None else find_closest_earlier(start_sec)
+        )
         new_end = end_adj if end_adj is not None else find_closest_later(end_sec)
 
         if new_end > new_start:
@@ -184,8 +186,6 @@ def adjust_segments_to_black_frames(
             )
 
     return adjusted
-
-
 
 
 def extract_audio(video_path: Path, wav_path: Path) -> Path:
@@ -515,7 +515,7 @@ def get_video_duration_seconds(path: Path) -> float:
     return float(probe.stdout.strip())
 
 
-def get_unique_filename(output_dir, base_name):
+def get_unique_filename(output_dir: Path, base_name: str) -> str:
     base_pattern = re.compile(rf"^{re.escape(base_name)}(?:_(\d+))?\.mp4$")
     existing = [fname for fname in os.listdir(output_dir) if base_pattern.match(fname)]
 
@@ -567,7 +567,9 @@ def detect_commercials(
         )
         speaker_spans: list[SpeakerSpan] = run_diarization(audio_path, hf_token)
         raw_segments: list[Segment] = transcribe_with_whisper(audio_path)
-        annotated_segments: list[Segment] = assign_speakers_to_segments(raw_segments, speaker_spans)
+        annotated_segments: list[Segment] = assign_speakers_to_segments(
+            raw_segments, speaker_spans
+        )
         store_video_data(
             conn=conn,
             video_hash=video_hash,
@@ -650,7 +652,7 @@ def detect_commercials(
         print(f"Saved: {filename}")
 
 
-def ensure_env_vars():
+def ensure_env_vars() -> None:
     missing = [key for key in REQUIRED_KEYS if not os.getenv(key)]
     if not missing:
         return
