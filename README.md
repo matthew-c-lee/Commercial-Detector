@@ -8,7 +8,7 @@ It uses:
 
 ## Requirements
 - A computer that can run moderate ML workloads (though we use ChatGPT for the LLM, we still run Whisper and PyAnnote locally)
-- Python 3.10+
+- Python 3.10.x - 3.12.x
 - ffmpeg installed and accessible from the command line
 - OpenAI API access
     - Alternatively, you can use ollama, but I found its results very poor in comparison.
