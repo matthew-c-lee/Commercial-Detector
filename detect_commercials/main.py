@@ -190,6 +190,7 @@ def adjust_segments_to_black_frames(
 
 def extract_audio(video_path: Path, wav_path: Path) -> Path:
     print("Extracting audio...")
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg",
         "-y",
@@ -228,7 +229,8 @@ def transcribe_with_whisper(
 def run_diarization(wav_path: Path, hf_token: str) -> list[SpeakerSpan]:
     print("Running speaker diarization...")
     pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization", use_auth_token=hf_token
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=hf_token
     )
     diarization = pipeline(wav_path)
     speaker_list = []
